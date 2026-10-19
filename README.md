@@ -27,7 +27,9 @@ If Firebase settings are missing, the app displays setup guidance on the sign-in
 4. Deploy Firestore rules using the command above. Admin pages are linked at `/admin` only for profiles whose role is `admin`.
 5. Bootstrap the first administrator manually in Firebase Console → Firestore → `users` → the administrator's Firebase Auth UID document. Change only its `role` field to `admin`, then sign out and back in so the app reloads the role.
 
-The dashboard writes score metadata and Drive PDF links to the Firestore `scores` collection. Public PDF access is optional and can be selected during upload. User management currently lists profiles and lets an admin grant or revoke the `admin` role; account disabling/deletion requires a trusted Firebase Admin SDK backend.
+The dashboard writes score metadata and Drive PDF links to the Firestore `scores` collection. Public PDF access is optional and can be selected during upload; collection preview links open the PDF in Google Drive and require the file to be shared with the viewer.
+
+Visitors can request a license from a collection score card. Guests provide their name and email; signed-in users use their account details. Requests are stored in `licenseRequests`, where only administrators can read or review them. The **License requests** dashboard tab lets admins approve or decline pending requests. Before approval, admins can edit the score title and licensee name; the approved values are saved for future downloads. Approval fills `public/license_letter.docx` (`{{Title_Scores}}`, `{{Licensed_To}}`, and `{{Date_Issued}}`, including time) and downloads the resulting DOCX as `License Letter - {{Title_Scores}} ({{Licensed_To}}).docx`. Deploy the Firestore rules after adding this workflow so public submissions and administrator-only review are enforced.
 
 ## Project setup
 

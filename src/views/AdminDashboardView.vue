@@ -1,11 +1,15 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { createLicenseLetter, downloadLicenseLetter, formatLicenseIssueDate } from '@/utils/licenseLetter'
 
 const userStore = useUserStore()
 const activeTab = ref('scores')
 const scores = ref([])
 const users = ref([])
+const licenseRequests = ref([])
+const processingRequestIds = ref([])
+const approvalPreview = ref(null)
 const selectedFile = ref(null)
 const isLoading = ref(true)
 const isSaving = ref(false)
@@ -36,16 +40,106 @@ async function loadUsers() {
   users.value = await userStore.listUsers()
 }
 
+async function loadLicenseRequests() {
+  licenseRequests.value = await userStore.listLicenseRequests()
+}
+
 async function loadDashboard() {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    await Promise.all([loadScores(), loadUsers()])
+    await Promise.all([loadScores(), loadUsers(), loadLicenseRequests()])
   } catch (error) {
     console.error('Unable to load admin dashboard:', error)
     errorMessage.value = error.message || 'Dashboard data could not be loaded.'
   } finally {
     isLoading.value = false
+  }
+}
+
+function formattedRequestDate(timestamp) {
+  const date = timestamp?.toDate?.()
+  return date
+    ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    : 'Just now'
+}
+
+function openApprovalPreview(request) {
+  approvalPreview.value = {
+    request,
+    issuedAt: new Date(),
+    licenseTitle: request.scoreTitle,
+    licensedTo: request.requesterName,
+  }
+}
+
+function closeApprovalPreview() {
+  if (approvalPreview.value && processingRequestIds.value.includes(approvalPreview.value.request.id)) return
+  approvalPreview.value = null
+}
+
+async function reviewLicenseRequest(request, status, issuedAt = new Date(), licenseDetails = null) {
+  if (processingRequestIds.value.includes(request.id)) return
+  errorMessage.value = ''
+  successMessage.value = ''
+  processingRequestIds.value.push(request.id)
+  let requestWasReviewed = false
+  try {
+    const approvedRequest = licenseDetails ? { ...request, ...licenseDetails } : request
+    const licenseBlob = status === 'approved' ? await createLicenseLetter(approvedRequest, issuedAt) : null
+    await userStore.updateLicenseRequestStatus(request.id, status, issuedAt, licenseDetails)
+    requestWasReviewed = true
+    request.status = status
+    if (licenseBlob) {
+      request.issuedAt = issuedAt
+      request.licenseTitle = approvedRequest.licenseTitle
+      request.licensedTo = approvedRequest.licensedTo
+    }
+    if (licenseBlob) {
+      downloadLicenseLetter(licenseBlob, approvedRequest.licenseTitle, approvedRequest.licensedTo)
+      successMessage.value = `License approved for ${request.requesterName}; the letter has been downloaded.`
+    } else {
+      successMessage.value = `License request from ${request.requesterName} declined.`
+    }
+  } catch (error) {
+    console.error(`Unable to ${status} license request:`, error)
+    errorMessage.value = requestWasReviewed
+      ? `The request was ${status}, but the letter download could not be started. Use “Download letter” to try again.`
+      : error.message || `The license request could not be ${status}.`
+  } finally {
+    processingRequestIds.value = processingRequestIds.value.filter((id) => id !== request.id)
+  }
+}
+
+async function confirmLicenseApproval() {
+  if (!approvalPreview.value) return
+  const { request, issuedAt, licenseTitle, licensedTo } = approvalPreview.value
+  const licenseDetails = {
+    licenseTitle: licenseTitle.trim(),
+    licensedTo: licensedTo.trim(),
+  }
+  if (!licenseDetails.licenseTitle || !licenseDetails.licensedTo) {
+    errorMessage.value = 'Enter a score title and licensee before approving this request.'
+    return
+  }
+  await reviewLicenseRequest(request, 'approved', issuedAt, licenseDetails)
+  if (request.status === 'approved') approvalPreview.value = null
+}
+
+async function redownloadLicenseLetter(request) {
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const licenseBlob = await createLicenseLetter(request)
+    downloadLicenseLetter(
+      licenseBlob,
+      request.licenseTitle || request.scoreTitle,
+      request.licensedTo || request.requesterName,
+    )
+    successMessage.value = `License letter for ${request.requesterName} downloaded.`
+  } catch (error) {
+    console.error('Unable to download approved license letter:', error)
+    errorMessage.value = error.message || 'The license letter could not be downloaded.'
   }
 }
 
@@ -239,6 +333,14 @@ onMounted(loadDashboard)
       <button
         type="button"
         class="border-b-2 px-4 py-3 text-sm transition-colors"
+        :class="activeTab === 'licenses' ? 'border-brand-gold font-semibold text-brand-dark' : 'border-transparent text-brand-dark/55 hover:text-brand-dark'"
+        @click="activeTab = 'licenses'"
+      >
+        License requests <span class="ml-1 text-xs text-brand-dark/45">{{ licenseRequests.filter((request) => request.status === 'pending').length }}</span>
+      </button>
+      <button
+        type="button"
+        class="border-b-2 px-4 py-3 text-sm transition-colors"
         :class="activeTab === 'users' ? 'border-brand-gold font-semibold text-brand-dark' : 'border-transparent text-brand-dark/55 hover:text-brand-dark'"
         @click="activeTab = 'users'"
       >
@@ -312,7 +414,117 @@ onMounted(loadDashboard)
       </form>
     </div>
 
-    <section v-else-if="activeTab === 'users'" class="overflow-hidden border border-brand-dark/10 bg-white">
+    <section v-else-if="activeTab === 'licenses'" class="border border-brand-dark/10 bg-white">
+      <div class="border-b border-brand-dark/10 px-5 py-4">
+        <h2 class="font-serif text-2xl">License requests</h2>
+          <p class="mt-1 text-xs text-brand-dark/50">Review requests and customize the score title and licensee before issuing each letter.</p>
+      </div>
+      <div v-if="!licenseRequests.length" class="px-5 py-12 text-center text-sm text-brand-dark/50">No license requests yet.</div>
+      <div v-else class="divide-y divide-brand-dark/10">
+        <article v-for="request in licenseRequests" :key="request.id" class="flex flex-col justify-between gap-5 px-5 py-5 sm:flex-row sm:items-center">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="font-serif text-xl">{{ request.scoreTitle }}</h3>
+              <span
+                class="rounded-full px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                :class="{
+                  'bg-amber-100 text-amber-900': request.status === 'pending',
+                  'bg-emerald-100 text-emerald-900': request.status === 'approved',
+                  'bg-red-100 text-red-900': request.status === 'declined',
+                }"
+              >{{ request.status }}</span>
+            </div>
+            <p class="mt-2 text-sm">{{ request.requesterName }} <span class="text-brand-dark/50">· {{ request.requesterEmail }}</span></p>
+            <p class="mt-1 text-xs text-brand-dark/45">Submitted {{ formattedRequestDate(request.createdAt) }}</p>
+          </div>
+          <div class="flex shrink-0 gap-2">
+            <template v-if="request.status === 'pending'">
+              <button
+                type="button"
+                :disabled="processingRequestIds.includes(request.id)"
+                class="rounded-full bg-brand-dark px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-brand-cream transition-colors hover:bg-brand-gold hover:text-brand-dark disabled:cursor-wait disabled:opacity-50"
+                @click="openApprovalPreview(request)"
+              >Review & approve</button>
+              <button
+                type="button"
+                :disabled="processingRequestIds.includes(request.id)"
+                class="rounded-full border border-red-800/20 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-800 transition-colors hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
+                @click="reviewLicenseRequest(request, 'declined')"
+              >Decline</button>
+            </template>
+            <button
+              v-else-if="request.status === 'approved'"
+              type="button"
+              class="rounded-full border border-brand-dark/15 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors hover:border-brand-gold"
+              @click="redownloadLicenseLetter(request)"
+            >Download letter</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <div
+      v-if="approvalPreview"
+      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-brand-dark/60 p-4"
+      @click.self="closeApprovalPreview"
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="license-preview-title"
+        class="my-8 w-full max-w-lg border border-brand-dark/10 bg-brand-cream p-6 shadow-2xl sm:p-8"
+      >
+        <div class="mb-6">
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-gold">License letter preview</p>
+          <h2 id="license-preview-title" class="font-serif text-2xl">Edit license details.</h2>
+          <p class="mt-2 text-sm leading-6 text-brand-dark/55">Update the score title or licensee name before approving and generating the letter.</p>
+        </div>
+
+        <form class="mb-7 divide-y divide-brand-dark/10 border-y border-brand-dark/10" @submit.prevent="confirmLicenseApproval">
+          <div class="py-4">
+            <label for="license-title-preview" class="mb-2 block text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-dark/45">Title_Scores</label>
+            <input
+              id="license-title-preview"
+              v-model="approvalPreview.licenseTitle"
+              required
+              maxlength="160"
+              :disabled="processingRequestIds.includes(approvalPreview.request.id)"
+              class="w-full border border-brand-dark/15 bg-white px-3 py-2.5 font-serif text-lg outline-none focus:border-brand-gold disabled:opacity-60"
+            >
+          </div>
+          <div class="py-4">
+            <label for="licensee-preview" class="mb-2 block text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-dark/45">Licensed_To</label>
+            <input
+              id="licensee-preview"
+              v-model="approvalPreview.licensedTo"
+              required
+              maxlength="100"
+              :disabled="processingRequestIds.includes(approvalPreview.request.id)"
+              class="w-full border border-brand-dark/15 bg-white px-3 py-2.5 text-sm font-medium outline-none focus:border-brand-gold disabled:opacity-60"
+            >
+          </div>
+          <div class="py-4">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-dark/45">Date_Issued</p>
+            <p class="mt-1 text-sm">{{ formatLicenseIssueDate(approvalPreview.issuedAt) }}</p>
+          </div>
+          <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              :disabled="processingRequestIds.includes(approvalPreview.request.id)"
+              class="rounded-full border border-brand-dark/15 px-5 py-3 text-xs font-semibold transition-colors hover:border-brand-gold disabled:opacity-50"
+              @click="closeApprovalPreview"
+            >Cancel</button>
+            <button
+              type="submit"
+              :disabled="processingRequestIds.includes(approvalPreview.request.id)"
+              class="rounded-full bg-brand-dark px-5 py-3 text-xs font-semibold uppercase tracking-[0.1em] text-brand-cream transition-colors hover:bg-brand-gold hover:text-brand-dark disabled:cursor-wait disabled:opacity-50"
+            >{{ processingRequestIds.includes(approvalPreview.request.id) ? 'Generating…' : 'Approve & download letter' }}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <section v-if="activeTab === 'users'" class="overflow-hidden border border-brand-dark/10 bg-white">
       <div class="border-b border-brand-dark/10 px-5 py-4">
         <h2 class="font-serif text-2xl">User accounts</h2>
         <p class="mt-1 text-xs text-brand-dark/50">Promote or revoke administrator access. You cannot change your own role here.</p>

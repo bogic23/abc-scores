@@ -6,6 +6,12 @@ const userStore = useUserStore()
 const isLoading = ref(true)
 const errorMessage = ref('')
 const firestoreScores = ref([])
+const requestingScore = ref(null)
+const requesterName = ref('')
+const requesterEmail = ref('')
+const requestError = ref('')
+const requestSuccess = ref('')
+const isSubmittingRequest = ref(false)
 
 const sampleScores = [
   { id: 'sample-nocturne', title: 'Nocturne in E-flat', composer: 'Frédéric Chopin', category: 'PIANO · ROMANTIC', price: 24, image: 'https://images.unsplash.com/photo-1552422535-c45813c61732?q=80&w=1000&auto=format&fit=crop', tag: 'Bestseller' },
@@ -46,6 +52,46 @@ function formattedPrice(price) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(price))
 }
 
+function openLicenseRequest(score) {
+  if (!userStore.isFirebaseConfigured) {
+    requestError.value = 'License requests are unavailable until Firebase is configured.'
+    return
+  }
+  requestSuccess.value = ''
+  requestError.value = ''
+  requestingScore.value = score
+  requesterName.value = userStore.user?.name || userStore.authUser?.displayName || ''
+  requesterEmail.value = userStore.user?.email || userStore.authUser?.email || ''
+}
+
+function closeLicenseRequest() {
+  if (isSubmittingRequest.value) return
+  requestingScore.value = null
+  requestError.value = ''
+}
+
+async function submitLicenseRequest() {
+  if (!requestingScore.value) return
+  requestError.value = ''
+  requestSuccess.value = ''
+  isSubmittingRequest.value = true
+  try {
+    await userStore.createLicenseRequest({
+      scoreId: requestingScore.value.id,
+      scoreTitle: requestingScore.value.title,
+      requesterName: requesterName.value,
+      requesterEmail: requesterEmail.value,
+    })
+    requestSuccess.value = `Your license request for “${requestingScore.value.title}” has been sent to our team.`
+    requestingScore.value = null
+  } catch (error) {
+    console.error('Unable to submit license request:', error)
+    requestError.value = error.message || 'Your license request could not be sent. Please try again.'
+  } finally {
+    isSubmittingRequest.value = false
+  }
+}
+
 onMounted(loadScores)
 </script>
 
@@ -71,43 +117,41 @@ onMounted(loadScores)
       </div>
 
       <p v-if="errorMessage" role="alert" class="mb-6 border border-red-800/15 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">{{ errorMessage }}</p>
-      <p v-else-if="isLoading" class="py-12 text-center text-sm text-brand-dark/50">Finding your next favorite…</p>
-      <div v-else-if="!scores.length" class="border border-dashed border-brand-gold/40 bg-white px-6 py-16 text-center">
+      <p v-if="requestError && !requestingScore" role="alert" class="mb-6 border border-red-800/15 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">{{ requestError }}</p>
+      <p v-if="requestSuccess" role="status" class="mb-6 border border-emerald-800/15 bg-emerald-50 px-4 py-3 text-sm leading-5 text-emerald-900">{{ requestSuccess }}</p>
+      <p v-if="isLoading" class="py-12 text-center text-sm text-brand-dark/50">Finding your next favorite…</p>
+      <div v-if="!isLoading && !errorMessage && !scores.length" class="border border-dashed border-brand-gold/40 bg-white px-6 py-16 text-center">
         <p class="font-serif text-2xl">A new collection is on its way.</p>
         <p class="mt-3 text-sm text-brand-dark/55">Please check back soon for our latest sheet music.</p>
       </div>
 
-      <div v-else class="grid gap-x-6 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
+      <div v-if="!isLoading && !errorMessage && scores.length" class="grid gap-x-6 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
         <article v-for="score in scores" :key="score.id" class="group">
-          <a v-if="score.driveUrl" :href="score.driveUrl" target="_blank" rel="noopener noreferrer" :aria-label="`Open ${score.title} by ${score.composer || 'unknown composer'} PDF`" class="block">
-            <div class="relative aspect-[4/4.7] overflow-hidden bg-[#e9e3d7]">
-              <img :src="score.image" :alt="`${score.title} sheet music`" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
-              <span class="absolute left-3 top-3 bg-brand-cream/95 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.13em] text-brand-dark">{{ score.tag }}</span>
-              <span class="absolute bottom-3 right-3 grid h-10 w-10 translate-y-2 place-items-center rounded-full bg-brand-cream text-brand-dark opacity-0 shadow-lg transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100" aria-hidden="true">↗</span>
-            </div>
-            <div class="flex items-start justify-between gap-3 pt-4">
-              <div>
-                <p class="mb-2 text-[9px] font-medium uppercase tracking-[0.14em] text-brand-gold">{{ score.category }}</p>
-                <h2 class="font-serif text-lg transition-colors group-hover:text-brand-gold">{{ score.title }}</h2>
-                <p class="mt-1 text-xs text-brand-dark/55">{{ score.composer }}</p>
-              </div>
-              <span class="pt-1 text-sm font-medium">{{ formattedPrice(score.price) }}</span>
-            </div>
-          </a>
-          <div v-else>
-            <div class="relative aspect-[4/4.7] overflow-hidden bg-[#e9e3d7]">
-              <img :src="score.image" :alt="`${score.title} sheet music`" class="h-full w-full object-cover">
-              <span class="absolute left-3 top-3 bg-brand-cream/95 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.13em] text-brand-dark">{{ score.tag }}</span>
-            </div>
-            <div class="flex items-start justify-between gap-3 pt-4">
-              <div>
-                <p class="mb-2 text-[9px] font-medium uppercase tracking-[0.14em] text-brand-gold">{{ score.category }}</p>
-                <h2 class="font-serif text-lg">{{ score.title }}</h2>
-                <p class="mt-1 text-xs text-brand-dark/55">{{ score.composer }}</p>
-              </div>
-              <span class="pt-1 text-sm font-medium">{{ formattedPrice(score.price) }}</span>
-            </div>
+          <div class="relative aspect-[4/4.7] overflow-hidden bg-[#e9e3d7]">
+            <img :src="score.image" :alt="`${score.title} sheet music`" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+            <span class="absolute left-3 top-3 bg-brand-cream/95 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.13em] text-brand-dark">{{ score.tag }}</span>
           </div>
+          <div class="flex items-start justify-between gap-3 pt-4">
+            <div>
+              <p class="mb-2 text-[9px] font-medium uppercase tracking-[0.14em] text-brand-gold">{{ score.category }}</p>
+              <h2 class="font-serif text-lg">{{ score.title }}</h2>
+              <p class="mt-1 text-xs text-brand-dark/55">{{ score.composer }}</p>
+            </div>
+            <span class="pt-1 text-sm font-medium">{{ formattedPrice(score.price) }}</span>
+          </div>
+          <a
+            v-if="score.driveUrl"
+            :href="score.driveUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="`Preview ${score.title} by ${score.composer || 'unknown composer'} PDF`"
+            class="mt-3 inline-block text-xs font-medium text-brand-gold underline underline-offset-4 hover:text-brand-dark"
+          >Preview score PDF ↗</a>
+          <button
+            type="button"
+            class="mt-4 w-full rounded-full border border-brand-dark/15 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors hover:border-brand-gold hover:bg-brand-gold hover:text-brand-dark"
+            @click="openLicenseRequest(score)"
+          >Request a license</button>
         </article>
       </div>
 
@@ -115,5 +159,38 @@ onMounted(loadScores)
         <p class="font-serif text-xl italic text-brand-dark/60">The right piece can change the whole room.</p>
       </div>
     </section>
+
+    <div v-if="requestingScore" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-brand-dark/60 p-4" @click.self="closeLicenseRequest">
+      <section role="dialog" aria-modal="true" aria-labelledby="license-request-title" class="my-8 w-full max-w-lg border border-brand-dark/10 bg-brand-cream p-6 shadow-2xl sm:p-8">
+        <div class="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-gold">License request</p>
+            <h2 id="license-request-title" class="font-serif text-2xl">Request “{{ requestingScore.title }}”</h2>
+            <p class="mt-2 text-sm text-brand-dark/55">Our team will review your request and contact you by email.</p>
+          </div>
+          <button type="button" aria-label="Close license request" class="text-xl text-brand-dark/50 hover:text-brand-dark" :disabled="isSubmittingRequest" @click="closeLicenseRequest">×</button>
+        </div>
+
+        <p v-if="requestError" role="alert" class="mb-5 border border-red-800/15 bg-red-50 px-4 py-3 text-sm text-red-800">{{ requestError }}</p>
+
+        <form @submit.prevent="submitLicenseRequest">
+          <template v-if="userStore.isLoggedIn">
+            <p class="mb-4 border border-brand-dark/10 bg-white px-4 py-3 text-sm leading-6">
+              <span class="block font-medium">{{ requesterName }}</span>
+              <span class="text-brand-dark/55">{{ requesterEmail }}</span>
+            </p>
+          </template>
+          <template v-else>
+            <label for="license-requester-name" class="mb-2 block text-xs font-semibold text-brand-dark/75">Your name</label>
+            <input id="license-requester-name" v-model="requesterName" required maxlength="100" autocomplete="name" class="mb-4 w-full border border-brand-dark/15 bg-white px-3 py-3 text-sm outline-none focus:border-brand-gold">
+            <label for="license-requester-email" class="mb-2 block text-xs font-semibold text-brand-dark/75">Email address</label>
+            <input id="license-requester-email" v-model="requesterEmail" required maxlength="254" type="email" autocomplete="email" class="mb-4 w-full border border-brand-dark/15 bg-white px-3 py-3 text-sm outline-none focus:border-brand-gold">
+          </template>
+          <button type="submit" :disabled="isSubmittingRequest" class="w-full rounded-full bg-brand-dark px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-brand-cream transition-colors hover:bg-brand-gold hover:text-brand-dark disabled:cursor-not-allowed disabled:opacity-50">
+            {{ isSubmittingRequest ? 'Sending request…' : 'Send license request' }}
+          </button>
+        </form>
+      </section>
+    </div>
   </div>
 </template>

@@ -88,5 +88,63 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy;
       allow delete: if isAdmin();
     }
+
+    match /licenseRequests/{requestId} {
+      allow get, list: if isAdmin();
+
+      allow create: if request.resource.data.keys().hasAll([
+          'scoreId', 'scoreTitle', 'requesterName', 'requesterEmail',
+          'requesterUid', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'scoreId', 'scoreTitle', 'requesterName', 'requesterEmail',
+          'requesterUid', 'status', 'createdAt'
+        ])
+        && request.resource.data.scoreId is string
+        && request.resource.data.scoreId.size() > 0
+        && exists(/databases/$(database)/documents/scores/$(request.resource.data.scoreId))
+        && request.resource.data.scoreTitle
+          == get(/databases/$(database)/documents/scores/$(request.resource.data.scoreId)).data.title
+        && request.resource.data.requesterName is string
+        && request.resource.data.requesterName.size() > 0
+        && request.resource.data.requesterName.size() <= 100
+        && request.resource.data.requesterEmail is string
+        && request.resource.data.requesterEmail.size() > 3
+        && request.resource.data.requesterEmail.size() <= 254
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && (
+          (request.auth == null && request.resource.data.requesterUid == '')
+          || (
+            request.auth != null
+            && request.resource.data.requesterUid == request.auth.uid
+            && request.resource.data.requesterEmail == request.auth.token.email
+          )
+        );
+
+      allow update: if isAdmin()
+        && resource.data.status == 'pending'
+        && request.resource.data.reviewedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'issuedAt', 'licenseTitle', 'licensedTo'])
+        && (
+          (
+            request.resource.data.status == 'approved'
+            && request.resource.data.issuedAt is timestamp
+            && request.resource.data.licenseTitle is string
+            && request.resource.data.licenseTitle.size() > 0
+            && request.resource.data.licenseTitle.size() <= 160
+            && request.resource.data.licensedTo is string
+            && request.resource.data.licensedTo.size() > 0
+            && request.resource.data.licensedTo.size() <= 100
+          )
+          || (
+            request.resource.data.status == 'declined'
+            && !request.resource.data.keys().hasAny(['issuedAt'])
+            && !request.resource.data.keys().hasAny(['licenseTitle', 'licensedTo'])
+          )
+        );
+      allow delete: if false;
+    }
   }
 }

@@ -376,6 +376,62 @@ export const useUserStore = defineStore('user', () => {
     return snapshot.docs.map((userDoc) => ({ id: userDoc.id, ...userDoc.data() }))
   }
 
+  async function listLicenseRequests() {
+    requireFirebase()
+    requireAdmin()
+    const firestoreSdk = await loadFirestoreSdk()
+    const requests = firestoreSdk.collection(firestoreSdk.getFirestore(firebaseApp), 'licenseRequests')
+    const requestsQuery = firestoreSdk.query(requests, firestoreSdk.orderBy('createdAt', 'desc'))
+    const snapshot = await firestoreSdk.getDocs(requestsQuery)
+    return snapshot.docs.map((requestDoc) => ({ id: requestDoc.id, ...requestDoc.data() }))
+  }
+
+  async function createLicenseRequest({ scoreId, scoreTitle, requesterName, requesterEmail }) {
+    requireFirebase()
+    const name = requesterName.trim()
+    const email = requesterEmail.trim()
+    if (!scoreId || !scoreTitle?.trim() || !name || !email) {
+      throw new Error('Provide your name and email address to request a license.')
+    }
+
+    const firestoreSdk = await loadFirestoreSdk()
+    const database = firestoreSdk.getFirestore(firebaseApp)
+    const created = await firestoreSdk.addDoc(firestoreSdk.collection(database, 'licenseRequests'), {
+      scoreId,
+      scoreTitle: scoreTitle.trim(),
+      requesterName: name,
+      requesterEmail: email,
+      requesterUid: authUser.value?.uid || '',
+      status: 'pending',
+      createdAt: firestoreSdk.serverTimestamp(),
+    })
+    return created.id
+  }
+
+  async function updateLicenseRequestStatus(requestId, status, issuedAt = new Date(), licenseDetails = null) {
+    requireFirebase()
+    requireAdmin()
+    if (!['approved', 'declined'].includes(status)) {
+      throw new Error('Choose approve or decline for this license request.')
+    }
+
+    const firestoreSdk = await loadFirestoreSdk()
+    const update = { status, reviewedAt: firestoreSdk.serverTimestamp() }
+    if (status === 'approved') {
+      if (!licenseDetails?.licenseTitle?.trim() || !licenseDetails?.licensedTo?.trim()) {
+        throw new Error('Enter a score title and licensee before approving this request.')
+      }
+      update.issuedAt = firestoreSdk.Timestamp.fromDate(issuedAt)
+      update.licenseTitle = licenseDetails.licenseTitle.trim()
+      update.licensedTo = licenseDetails.licensedTo.trim()
+    }
+
+    await firestoreSdk.updateDoc(
+      firestoreSdk.doc(firestoreSdk.getFirestore(firebaseApp), 'licenseRequests', requestId),
+      update,
+    )
+  }
+
   async function updateUserRole(userId, role) {
     requireFirebase()
     requireAdmin()
@@ -416,7 +472,9 @@ export const useUserStore = defineStore('user', () => {
     isFirebaseConfigured,
     isLoading,
     isLoggedIn,
+    createLicenseRequest,
     listScores,
+    listLicenseRequests,
     listUsers,
     login,
     loginWithGoogle,
@@ -426,6 +484,7 @@ export const useUserStore = defineStore('user', () => {
     deleteScore,
     deleteDrivePdf: (fileId) => callDriveApi(`files/${encodeURIComponent(fileId)}`, { method: 'DELETE' }),
     updateUserRole,
+    updateLicenseRequestStatus,
     uploadScorePdf,
     user,
   }
