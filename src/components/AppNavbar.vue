@@ -1,4 +1,5 @@
 <script setup>
+import defaultAvatar from '@/assets/default-avatar.svg'
 import { useUserStore } from '@/stores/user'
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -8,10 +9,21 @@ const route = useRoute()
 const isProfileOpen = ref(false)
 const isMenuOpen = ref(false)
 
+function useDefaultAvatar(event) {
+  if (event.currentTarget.getAttribute('src') !== defaultAvatar) {
+    event.currentTarget.src = defaultAvatar
+  }
+}
+
 watch(() => route.fullPath, () => {
   isMenuOpen.value = false
   isProfileOpen.value = false
 })
+
+async function handleLogout() {
+  const didLogout = await userStore.logout()
+  if (didLogout) isMenuOpen.value = false
+}
 </script>
 
 <template>
@@ -38,20 +50,25 @@ watch(() => route.fullPath, () => {
             aria-label="Open profile menu"
             @click="isProfileOpen = !isProfileOpen"
           >
-            <img :src="userStore.user.avatar" alt="" class="h-9 w-9 rounded-full border border-brand-gold/50 object-cover">
+            <img
+              :src="userStore.user.photoURL || userStore.authUser?.photoURL || defaultAvatar"
+              :alt="`${userStore.user.name} profile picture`"
+              class="h-9 w-9 rounded-full border border-brand-gold/50 object-cover"
+              @error="useDefaultAvatar"
+            >
             <span class="text-sm font-medium">{{ userStore.user.name.split(' ')[0] }}</span>
             <svg class="h-3 w-3 text-brand-dark/50 transition-transform" :class="{ 'rotate-180': isProfileOpen }" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m2 4 4 4 4-4" stroke="currentColor" stroke-width="1.5" /></svg>
           </button>
           <div v-if="isProfileOpen" class="absolute right-0 top-full mt-3 w-56 overflow-hidden rounded-xl border border-brand-dark/10 bg-white py-2 shadow-xl shadow-brand-dark/10">
             <div class="border-b border-brand-dark/10 px-4 py-3">
               <p class="text-sm font-semibold">{{ userStore.user.name }}</p>
-              <p class="mt-0.5 text-xs text-brand-dark/55">Your music, beautifully kept.</p>
+              <p class="mt-0.5 text-xs capitalize text-brand-dark/55">{{ userStore.user.role }} account</p>
             </div>
             <router-link to="/library" class="block px-4 py-2.5 text-sm transition-colors hover:bg-brand-cream">My Library</router-link>
-            <button type="button" class="w-full px-4 py-2.5 text-left text-sm text-red-700 transition-colors hover:bg-red-50" @click="userStore.logout(); isProfileOpen = false">Sign Out</button>
+            <button type="button" class="w-full px-4 py-2.5 text-left text-sm text-red-700 transition-colors hover:bg-red-50" @click="handleLogout(); isProfileOpen = false">Sign Out</button>
           </div>
         </div>
-        <router-link v-else to="/collections" class="hidden rounded-full bg-brand-dark px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-brand-cream transition-all hover:bg-brand-gold hover:text-brand-dark sm:inline-flex">Explore scores</router-link>
+        <router-link v-else to="/login" class="hidden rounded-full bg-brand-dark px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-brand-cream transition-all hover:bg-brand-gold hover:text-brand-dark sm:inline-flex">Sign in</router-link>
 
         <button
           type="button"
@@ -73,7 +90,14 @@ watch(() => route.fullPath, () => {
         <router-link to="/collections" class="mobile-nav-link">Collections</router-link>
         <router-link to="/library" class="mobile-nav-link">My Library</router-link>
         <router-link to="/about" class="mobile-nav-link">Our Story</router-link>
-        <router-link v-if="!userStore.isLoggedIn" to="/collections" class="mt-3 rounded-full bg-brand-dark px-5 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-brand-cream">Explore scores</router-link>
+        <div v-if="userStore.isLoggedIn && userStore.user" class="mt-4 flex items-center justify-between border-t border-brand-dark/10 pt-4">
+          <div>
+            <p class="text-sm font-semibold">{{ userStore.user.name }}</p>
+            <p class="mt-1 text-xs capitalize text-brand-dark/50">{{ userStore.user.role }} account</p>
+          </div>
+          <button type="button" class="text-xs font-semibold text-red-700" @click="handleLogout">Sign Out</button>
+        </div>
+        <router-link v-else to="/login" class="mt-3 rounded-full bg-brand-dark px-5 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-brand-cream">Sign in / Register</router-link>
       </div>
     </nav>
   </header>

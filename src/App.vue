@@ -1,12 +1,18 @@
 <!-- src/App.vue -->
 <script setup>
 import AppNavbar from '@/components/AppNavbar.vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 </script>
 
 <template>
   <div class="min-h-screen flex flex-col">
     <AppNavbar />
     <main class="flex-grow">
+      <div v-if="userStore.authError" role="alert" class="mx-auto mt-4 max-w-7xl px-5 sm:px-8">
+        <p class="border border-red-800/15 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">{{ userStore.authError }}</p>
+      </div>
       <RouterView v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
