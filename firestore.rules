@@ -2,12 +2,22 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     match /users/{userId} {
       function isOwner() {
-        return request.auth != null && request.auth.uid == userId;
+        return isSignedIn() && request.auth.uid == userId;
       }
 
-      allow read: if isOwner();
+      allow get: if isOwner() || isAdmin();
+      allow list: if isAdmin();
 
       allow create: if isOwner()
         && request.resource.data.keys().hasAll([
@@ -23,15 +33,60 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.photoURL is string;
 
-      allow update: if isOwner()
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['name', 'photoURL', 'updatedAt']);
+      allow update: if (
+          isOwner()
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'photoURL', 'updatedAt'])
+        ) || (
+          isAdmin()
+          && userId != request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.role in ['user', 'admin']
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['role', 'updatedAt'])
+        );
 
       allow delete: if false;
+    }
+
+    match /scores/{scoreId} {
+      function validScore(data) {
+        return data.keys().hasAll([
+            'title', 'composer', 'category', 'details', 'price',
+            'driveFileId', 'driveUrl', 'createdAt', 'updatedAt', 'createdBy'
+          ])
+          && data.keys().hasOnly([
+            'title', 'composer', 'category', 'details', 'price',
+            'driveFileId', 'driveUrl', 'createdAt', 'updatedAt', 'createdBy'
+          ])
+          && data.title is string
+          && data.title.size() > 0
+          && data.composer is string
+          && data.category is string
+          && data.details is string
+          && (data.price == null || data.price is number)
+          && data.driveFileId is string
+          && data.driveFileId.size() > 0
+          && data.driveUrl is string
+          && data.driveUrl.matches('https://drive\\.google\\.com/.*')
+          && data.createdBy is string;
+      }
+
+      allow read: if true;
+      allow create: if isAdmin()
+        && validScore(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAdmin()
+        && validScore(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isAdmin();
     }
   }
 }

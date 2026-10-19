@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
     { path: '/login', name: 'login', component: () => import('../views/AuthView.vue'), meta: { guestOnly: true } },
     { path: '/register', name: 'register', component: () => import('../views/AuthView.vue'), meta: { guestOnly: true } },
+    { path: '/admin', name: 'admin', component: () => import('../views/AdminDashboardView.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
   ]
 })
 
@@ -21,6 +22,10 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.requiresAdmin && !userStore.isAdmin) {
+    return { name: userStore.isLoggedIn ? 'home' : 'login' }
   }
 
   if (to.meta.guestOnly && userStore.isLoggedIn) {

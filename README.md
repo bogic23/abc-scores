@@ -19,6 +19,16 @@ The Firestore rules restrict profile reads to the account owner, require new pro
 
 If Firebase settings are missing, the app displays setup guidance on the sign-in page. The Firebase web configuration is intended for client apps; Firestore security rules are what protect the stored data.
 
+## Admin dashboard and Google Drive
+
+1. Set `VITE_ABC_SCORES_FOLDER_ID` to the destination Drive folder ID. Keep `VITE_API_KEY` for Firebase only; do not define it twice.
+2. Enable the **Google Drive API** in the Google Cloud project.
+3. Configure Google OAuth for Firebase and grant the `drive.file` scope. The administrator connects the Drive account from the dashboard; this requests OAuth permission and obtains a short-lived Drive token. Authenticated Drive requests use this OAuth access token and do not need a Drive API key.
+4. Deploy Firestore rules using the command above. Admin pages are linked at `/admin` only for profiles whose role is `admin`.
+5. Bootstrap the first administrator manually in Firebase Console → Firestore → `users` → the administrator's Firebase Auth UID document. Change only its `role` field to `admin`, then sign out and back in so the app reloads the role.
+
+The dashboard writes score metadata and Drive PDF links to the Firestore `scores` collection. Public PDF access is optional and can be selected during upload. User management currently lists profiles and lets an admin grant or revoke the `admin` role; account disabling/deletion requires a trusted Firebase Admin SDK backend.
+
 ## Project setup
 
 ```sh

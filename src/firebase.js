@@ -11,5 +11,7 @@ const firebaseConfig = {
 
 const requiredConfig = ['apiKey', 'authDomain', 'projectId', 'appId']
 export const isFirebaseConfigured = requiredConfig.every((key) => Boolean(firebaseConfig[key]))
+export const scoresFolderId = import.meta.env.VITE_ABC_SCORES_FOLDER_ID || ''
+export const isDriveConfigured = Boolean(scoresFolderId)
 
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null

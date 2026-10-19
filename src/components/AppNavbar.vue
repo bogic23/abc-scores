@@ -39,6 +39,7 @@ async function handleLogout() {
         <router-link to="/collections" class="nav-link">Collections</router-link>
         <router-link to="/library" class="nav-link">My Library</router-link>
         <router-link to="/about" class="nav-link">Our Story</router-link>
+        <router-link v-if="userStore.isAdmin" to="/admin" class="nav-link">Admin</router-link>
       </div>
 
       <div class="flex items-center gap-3">
@@ -90,6 +91,7 @@ async function handleLogout() {
         <router-link to="/collections" class="mobile-nav-link">Collections</router-link>
         <router-link to="/library" class="mobile-nav-link">My Library</router-link>
         <router-link to="/about" class="mobile-nav-link">Our Story</router-link>
+        <router-link v-if="userStore.isAdmin" to="/admin" class="mobile-nav-link">Admin Dashboard</router-link>
         <div v-if="userStore.isLoggedIn && userStore.user" class="mt-4 flex items-center justify-between border-t border-brand-dark/10 pt-4">
           <div>
             <p class="text-sm font-semibold">{{ userStore.user.name }}</p>
