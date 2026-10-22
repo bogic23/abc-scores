@@ -12,6 +12,7 @@ const requesterEmail = ref('')
 const requestError = ref('')
 const requestSuccess = ref('')
 const isSubmittingRequest = ref(false)
+const previewingScore = ref(null)
 
 const sampleScores = [
   { id: 'sample-nocturne', title: 'Nocturne in E-flat', composer: 'Frédéric Chopin', category: 'PIANO · ROMANTIC', price: 24, image: 'https://images.unsplash.com/photo-1552422535-c45813c61732?q=80&w=1000&auto=format&fit=crop', tag: 'Bestseller' },
@@ -50,6 +51,28 @@ async function loadScores() {
 function formattedPrice(price) {
   if (price === null || price === undefined || price === '') return 'View score'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(price))
+}
+
+function driveFileId(score) {
+  if (!score.driveUrl) return ''
+
+  try {
+    const url = new URL(score.driveUrl)
+    if (url.protocol !== 'https:' || url.hostname !== 'drive.google.com' || url.port || url.username || url.password) return ''
+    const match = url.pathname.match(/^\/file\/d\/([A-Za-z0-9_-]+)(?:\/|$)/)
+    return match?.[1] || ''
+  } catch {
+    return ''
+  }
+}
+
+const previewUrl = computed(() => {
+  const fileId = previewingScore.value && driveFileId(previewingScore.value)
+  return fileId ? `https://drive.google.com/file/d/${fileId}/preview?rm=minimal` : ''
+})
+
+function openPreview(score) {
+  if (driveFileId(score)) previewingScore.value = score
 }
 
 function openLicenseRequest(score) {
@@ -139,14 +162,13 @@ onMounted(loadScores)
             </div>
             <span class="pt-1 text-sm font-medium">{{ formattedPrice(score.price) }}</span>
           </div>
-          <a
-            v-if="score.driveUrl"
-            :href="score.driveUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            :aria-label="`Preview ${score.title} by ${score.composer || 'unknown composer'} PDF`"
+          <button
+            v-if="driveFileId(score)"
+            type="button"
             class="mt-3 inline-block text-xs font-medium text-brand-gold underline underline-offset-4 hover:text-brand-dark"
-          >Preview score PDF ↗</a>
+            :aria-label="`Preview ${score.title} by ${score.composer || 'unknown composer'} PDF`"
+            @click="openPreview(score)"
+          >Preview score PDF</button>
           <button
             type="button"
             class="mt-4 w-full rounded-full border border-brand-dark/15 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors hover:border-brand-gold hover:bg-brand-gold hover:text-brand-dark"
@@ -159,6 +181,34 @@ onMounted(loadScores)
         <p class="font-serif text-xl italic text-brand-dark/60">The right piece can change the whole room.</p>
       </div>
     </section>
+
+    <div v-if="previewingScore" class="fixed inset-0 z-50 grid place-items-center bg-brand-dark/80 p-3 sm:p-6" @click.self="previewingScore = null">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="score-preview-title"
+        class="flex max-h-[94vh] w-full max-w-5xl flex-col border border-brand-dark/10 bg-brand-cream p-4 shadow-2xl sm:p-6"
+      >
+        <div class="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-gold">Google Drive preview</p>
+            <h2 id="score-preview-title" class="mt-1 font-serif text-xl">{{ previewingScore.title }}</h2>
+          </div>
+          <button type="button" aria-label="Close PDF preview" class="text-2xl leading-none text-brand-dark/60 hover:text-brand-dark" @click="previewingScore = null">×</button>
+        </div>
+        <div class="h-[72vh] overflow-hidden bg-white">
+          <iframe
+            :src="previewUrl"
+            :title="`PDF preview of ${previewingScore.title}`"
+            class="h-full w-full pointer-events-none select-none"
+            scrolling="no"
+            tabindex="-1"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </div>
+        <p class="mt-3 text-xs leading-5 text-brand-dark/55">Preview controls and scrolling are disabled. Screen capture cannot be prevented in a web browser.</p>
+      </section>
+    </div>
 
     <div v-if="requestingScore" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-brand-dark/60 p-4" @click.self="closeLicenseRequest">
       <section role="dialog" aria-modal="true" aria-labelledby="license-request-title" class="my-8 w-full max-w-lg border border-brand-dark/10 bg-brand-cream p-6 shadow-2xl sm:p-8">

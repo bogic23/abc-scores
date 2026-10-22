@@ -309,6 +309,7 @@ export const useUserStore = defineStore('user', () => {
       name: file.name,
       mimeType: 'application/pdf',
       parents: [scoresFolderId],
+      copyRequiresWriterPermission: true,
     }
     const body = new Blob([
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,

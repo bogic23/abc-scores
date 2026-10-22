@@ -1,30 +1,46 @@
 <script setup>
+import { computed, onMounted, ref } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+const isLoadingScores = ref(true)
+const scoresError = ref('')
+const firestoreScores = ref([])
+
 const highlights = [
   { number: '01', title: 'Curated with care', text: 'Every edition chosen for its musicality, quality, and story.' },
   { number: '02', title: 'Made to be played', text: 'Thoughtful, readable scores for the moments that matter.' },
   { number: '03', title: 'A lifetime of music', text: 'Build a personal library you will return to, again and again.' },
 ]
 
-const featuredScores = [
-  {
-    title: 'Nocturne in E-flat',
-    composer: 'Frédéric Chopin',
-    image: 'https://images.unsplash.com/photo-1552422535-c45813c61732?q=80&w=1000&auto=format&fit=crop',
-    label: 'Piano · Romantic',
-  },
-  {
-    title: 'The Quiet Garden',
-    composer: 'Clara Schumann',
-    image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop',
-    label: 'Piano · Original edition',
-  },
-  {
-    title: 'A Winter Reverie',
-    composer: 'Claude Debussy',
-    image: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?q=80&w=1000&auto=format&fit=crop',
-    label: 'Ensemble · Impressionist',
-  },
+const scoreImages = [
+  'https://images.unsplash.com/photo-1552422535-c45813c61732?q=80&w=1000&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1507838153414-b4b713384a76?q=80&w=1000&auto=format&fit=crop',
 ]
+
+const featuredScores = computed(() => firestoreScores.value.slice(0, 3).map((score, index) => ({
+  ...score,
+  image: score.image || scoreImages[index % scoreImages.length],
+  label: score.category || 'Selected score',
+})))
+
+async function loadFeaturedScores() {
+  isLoadingScores.value = true
+  scoresError.value = ''
+  try {
+    firestoreScores.value = await userStore.listScores()
+  } catch (error) {
+    console.error('Unable to load homepage scores:', error)
+    scoresError.value = userStore.isFirebaseConfigured
+      ? 'Scores could not be loaded right now. Please try again shortly.'
+      : 'Scores are unavailable until Firebase is configured.'
+  } finally {
+    isLoadingScores.value = false
+  }
+}
+
+onMounted(loadFeaturedScores)
 </script>
 
 <template>
@@ -97,8 +113,17 @@ const featuredScores = [
         </router-link>
       </div>
 
-      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        <article v-for="(score, index) in featuredScores" :key="score.title" class="group overflow-hidden rounded-sm border border-brand-dark/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-dark/10" :class="{ 'sm:hidden lg:block': index === 2 }">
+      <p v-if="isLoadingScores" class="py-12 text-center text-sm text-brand-dark/50">Finding your next favorite…</p>
+      <div v-else-if="scoresError" role="alert" class="border border-red-800/15 bg-red-50 px-4 py-3 text-center text-sm leading-5 text-red-800">
+        {{ scoresError }}
+        <button type="button" class="ml-2 underline underline-offset-2" @click="loadFeaturedScores">Try again</button>
+      </div>
+      <div v-else-if="!featuredScores.length" class="border border-dashed border-brand-gold/40 bg-white px-6 py-12 text-center">
+        <p class="font-serif text-xl">A new collection is on its way.</p>
+        <p class="mt-2 text-sm text-brand-dark/55">Please check back soon for our latest sheet music.</p>
+      </div>
+      <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <article v-for="(score, index) in featuredScores" :key="score.id" class="group overflow-hidden rounded-sm border border-brand-dark/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-dark/10" :class="{ 'sm:hidden lg:block': index === 2 }">
           <router-link to="/collections" class="block">
             <div class="relative h-64 overflow-hidden bg-[#e9e3d7]">
               <img :src="score.image" :alt="`${score.title} sheet music collection`" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
@@ -108,7 +133,7 @@ const featuredScores = [
               <div>
                 <p class="mb-2 text-[9px] uppercase tracking-[0.16em] text-brand-gold">{{ score.label }}</p>
                 <h3 class="font-serif text-xl">{{ score.title }}</h3>
-                <p class="mt-1 text-xs text-brand-dark/55">{{ score.composer }}</p>
+                <p class="mt-1 text-xs text-brand-dark/55">{{ score.composer || 'Traditional' }}</p>
               </div>
               <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-brand-dark/15 text-brand-dark transition-all group-hover:border-brand-dark group-hover:bg-brand-dark group-hover:text-brand-cream" aria-hidden="true">↗</span>
             </div>
